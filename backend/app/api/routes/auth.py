@@ -159,7 +159,7 @@ def get_facebook_pages(facebook_user_id: str, db: Session = Depends(_get_db)):
 
 
 @router.post("/pages/{page_id}/default")
-def set_default_page(facebook_user_id: str, page_id: str, db: Session = __import__("fastapi").Depends(_get_db)):
+def set_default_page(facebook_user_id: str, page_id: str, db: Session = Depends(_get_db)):
     page = db.query(FacebookPage).filter_by(facebook_user_id=facebook_user_id, page_id=page_id).first()
     if not page:
         raise HTTPException(404, "Không tìm thấy Fanpage trong danh sách đã kết nối.")
