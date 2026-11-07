@@ -41,7 +41,7 @@ type PublishJob = { id: number; video_id: number; page_name: string; page_id: st
 
 
 function PagesPanel() {
-  const [account, setAccount] = useState<FacebookAccount | null>(() => readFacebookAccount());
+  const [account, setAccount] = useState<FacebookAccount | null>(null);
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -78,6 +78,7 @@ function PagesPanel() {
     return () => window.removeEventListener("message", onMessage);
   }, [loadPages]);
 
+  useEffect(() => { setAccount(readFacebookAccount()); }, []);
   useEffect(() => { if (account?.id) void loadPages(account.id); }, [account?.id, loadPages]);
 
   function connect() {
@@ -132,7 +133,7 @@ function PagesPanel() {
 function SchedulePanel() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
-  const [facebookUserId, setFacebookUserId] = useState(() => readFacebookAccount()?.id || "");
+  const [facebookUserId, setFacebookUserId] = useState("");
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
   const [jobs, setJobs] = useState<PublishJob[]>([]);
@@ -157,6 +158,8 @@ function SchedulePanel() {
   }, []);
 
   useEffect(() => {
+    const savedAccount = readFacebookAccount();
+    if (savedAccount) setFacebookUserId(savedAccount.id);
     void loadData();
     const local = new Date(Date.now() + 5 * 60 * 1000);
     const localValue = new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
