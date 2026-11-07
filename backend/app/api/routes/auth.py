@@ -196,10 +196,17 @@ def disconnect_page(facebook_user_id: str, page_id: str, db: Session = __import_
     page = db.query(FacebookPage).filter_by(facebook_user_id=facebook_user_id, page_id=page_id).first()
     if not page:
         raise HTTPException(404, "Không tìm thấy Fanpage.")
+    was_default = page.is_default
+    page_name = page.name
     redis_client.delete(f"facebook:page_token:{facebook_user_id}:{page_id}")
     db.delete(page)
+    db.flush()
+    if was_default:
+        replacement = db.query(FacebookPage).filter_by(facebook_user_id=facebook_user_id).order_by(FacebookPage.name.asc()).first()
+        if replacement:
+            replacement.is_default = True
     db.commit()
-    return {"success": True, "message": f"Đã ngắt kết nối {page.name}."}
+    return {"success": True, "message": f"Đã ngắt kết nối {page_name}."}
 
 
 @router.delete("/connection")
@@ -208,4 +215,12 @@ def disconnect_facebook(facebook_user_id: str):
     keys = list(redis_client.scan_iter(match=f"facebook:page_token:{facebook_user_id}:*"))
     if keys:
         redis_client.delete(*keys)
+    db = SessionLocal()
+    try:
+        db.query(FacebookPage).filter_by(facebook_user_id=facebook_user_id).update(
+            {FacebookPage.connected: False, FacebookPage.is_default: False}
+        )
+        db.commit()
+    finally:
+        db.close()
     return {"success": True, "message": "Đã ngắt kết nối tài khoản Facebook."}
