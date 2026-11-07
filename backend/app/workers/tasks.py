@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import update
 
 from app.core.database import SessionLocal
+from app.core.redis import redis_client
 from app.models.publish_job import PublishJob
 from app.services.publishing_service import publish_reel
 from app.workers.celery_app import celery_app
@@ -26,9 +27,13 @@ def dispatch_due_reels():
     finally:
         db.close()
 
+    queued = 0
     for job_id in due_ids:
-        publish_scheduled_reel.delay(job_id)
-    return {"queued": len(due_ids)}
+        lock_key = f"publishing:dispatch:{job_id}"
+        if redis_client.set(lock_key, "1", nx=True, ex=300):
+            publish_scheduled_reel.delay(job_id)
+            queued += 1
+    return {"queued": queued}
 
 
 @celery_app.task(name="app.workers.tasks.publish_scheduled_reel", bind=True, max_retries=0)
@@ -41,6 +46,7 @@ def publish_scheduled_reel(self, job_id: int):
             .values(status="publishing", attempts=PublishJob.attempts + 1)
         )
         db.commit()
+        redis_client.delete(f"publishing:dispatch:{job_id}")
         if claimed.rowcount != 1:
             return {"job_id": job_id, "skipped": True}
 
