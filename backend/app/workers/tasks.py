@@ -5,7 +5,7 @@ from sqlalchemy import update
 from app.core.database import SessionLocal
 from app.core.redis import redis_client
 from app.models.publish_job import PublishJob
-from app.services.publishing_service import publish_reel
+from app.services.publishing_service import publish_reel, safe_publish_error
 from app.workers.celery_app import celery_app
 
 
@@ -64,10 +64,10 @@ def publish_scheduled_reel(self, job_id: int):
             job = db.get(PublishJob, job_id)
             if job:
                 job.status = "failed"
-                # Do not persist provider response bodies that could contain credentials.
-                job.error_message = str(exc)[:1000]
+                # Never persist raw HTTP exceptions: their URLs may contain access tokens.
+                job.error_message = safe_publish_error(exc)
                 job.updated_at = datetime.now(timezone.utc)
                 db.commit()
-            return {"job_id": job_id, "status": "failed", "error": str(exc)[:300]}
+            return {"job_id": job_id, "status": "failed", "error": safe_publish_error(exc)}
     finally:
         db.close()
