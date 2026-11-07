@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.redis import redis_client
+from app.models.facebook_page import FacebookPage
 from app.models.posting_setting import PostingSetting
 from app.models.publish_job import PublishJob
 from app.models.video import Video
@@ -111,6 +113,21 @@ def list_jobs(
 
 @router.post("/schedule", status_code=201)
 def schedule_reels(payload: ScheduleRequest, db: Session = Depends(get_db)):
+    page = db.query(FacebookPage).filter_by(
+        facebook_user_id=payload.facebook_user_id,
+        page_id=payload.page_id,
+    ).first()
+    if not page or not page.connected:
+        raise HTTPException(
+            status_code=403,
+            detail="Fanpage chưa được đồng bộ hoặc không còn quyền truy cập. Hãy đồng bộ lại Fanpage.",
+        )
+    page_tasks = set(json.loads(page.tasks_json or "[]"))
+    if page_tasks and not page_tasks.intersection({"CREATE_CONTENT", "MANAGE"}):
+        raise HTTPException(
+            status_code=403,
+            detail="Tài khoản Facebook chưa có quyền tạo nội dung trên Fanpage này.",
+        )
     page_token = redis_client.get(
         f"facebook:page_token:{payload.facebook_user_id}:{payload.page_id}"
     )
