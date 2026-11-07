@@ -134,7 +134,7 @@ function SchedulePanel() {
   const [selected, setSelected] = useState<number[]>([]);
   const [facebookUserId, setFacebookUserId] = useState(() => readFacebookAccount()?.id || "");
   const [pages, setPages] = useState<FacebookPage[]>([]);
-  const [pageId, setPageId] = useState("");
+  const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
   const [jobs, setJobs] = useState<PublishJob[]>([]);
   const [interval, setInterval] = useState(30);
   const [startAt, setStartAt] = useState("");
@@ -185,11 +185,19 @@ function SchedulePanel() {
 
   async function createSchedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(""); setMessage("");
-    const page = pages.find(item => item.id === pageId);
-    if (!facebookUserId.trim() || !page) { setError("Hãy kết nối Facebook và chọn Fanpage trước."); return; }
+    const selectedPages = pages.filter(page => selectedPageIds.includes(page.id) && page.connected !== false);
+    if (!facebookUserId.trim() || !selectedPages.length) { setError("Hãy kết nối Facebook và chọn ít nhất một Fanpage có quyền đăng."); return; }
     if (!selected.length) { setError("Hãy chọn ít nhất một video."); return; }
     try {
-      const response = await fetch(`${API_URL}/api/publishing/schedule`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facebook_user_id: facebookUserId.trim(), page_id: page.id, page_name: page.name, video_ids: selected, start_at: new Date(startAt).toISOString(), interval_minutes: interval }) });
+      let created = 0;
+      for (const page of selectedPages) {
+        const response = await fetch(`${API_URL}/api/publishing/schedule`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facebook_user_id: facebookUserId.trim(), page_id: page.id, page_name: page.name, video_ids: selected, start_at: new Date(startAt).toISOString(), interval_minutes: interval }) });
+        const body = await response.json();
+        if (!response.ok) throw new Error("Fanpage " + page.name + ": " + (body.detail || "Không thể tạo lịch đăng."));
+        created += body.jobs?.length || selected.length;
+      }
+      setMessage("Đã tạo " + created + " lịch đăng trên " + selectedPages.length + " Fanpage.");
+      setSelected([]); await loadData();
       const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể tạo lịch đăng.");
       setMessage(body.message); setSelected([]); await loadData();
     } catch (err) { setError(getErrorMessage(err)); }
@@ -211,8 +219,8 @@ function SchedulePanel() {
     <div className="schedule-grid">
       <form className="library-panel schedule-form" onSubmit={createSchedule}>
         <div className="schedule-section-title"><div><h2>1. Kết nối Fanpage</h2><p>Token Fanpage được lưu tạm trong Redis, không hiển thị ra giao diện.</p></div></div>
-        <div className="field-row"><label className="field-label">Tài khoản Facebook</label><div className="connected-account"><strong>{readFacebookAccount()?.name || (facebookUserId ? "Đã kết nối Facebook" : "Chưa kết nối")}</strong><small>{facebookUserId ? "ID: " + facebookUserId : "Kết nối để tải các Fanpage bạn quản lý."}</small></div><div className="inline-field"><button type="button" className="button button-primary" onClick={() => window.open(API_URL + "/api/auth/facebook/login", "facebook-oauth", "popup,width=640,height=760")}>＋ Kết nối Facebook</button><button type="button" className="button button-secondary" onClick={() => void loadPages()} disabled={!facebookUserId}>↻ Đồng bộ Fanpage</button></div><button type="button" className="text-action" onClick={() => void loadPages()}>Tải lại danh sách Fanpage</button></div>
-        <div className="field-row"><label className="field-label" htmlFor="page-select">Fanpage nhận video</label><select id="page-select" value={pageId} onChange={e => setPageId(e.target.value)}><option value="">-- Chọn Fanpage --</option>{pages.map(page => <option key={page.id} value={page.id}>{page.name}{page.is_default ? " · Mặc định" : ""}</option>)}</select></div>
+        <div className="field-row"><label className="field-label">Tài khoản Facebook</label><div className="connected-account"><strong>{readFacebookAccount()?.name || (facebookUserId ? "Đã kết nối Facebook" : "Chưa kết nối")}</strong><small>{facebookUserId ? "ID: " + facebookUserId : "Kết nối và quản lý tài khoản tại mục Fanpage."}</small></div><button type="button" className="button button-secondary" onClick={() => void loadPages()} disabled={!facebookUserId}>↻ Đồng bộ Fanpage</button></div>
+        <div className="field-row"><label className="field-label" htmlFor="page-select">Fanpage nhận video</label><select id="page-select" multiple value={selectedPageIds} onChange={e => setSelectedPageIds(Array.from(e.target.selectedOptions, option => option.value))}>{pages.map(page => <option key={page.id} value={page.id} disabled={page.connected === false}>{page.name}{page.is_default ? " · Mặc định" : ""}</option>)}</select><small className="field-hint">Giữ Ctrl (Windows) hoặc Command (Mac) để chọn nhiều Fanpage.</small></div>
         <div className="divider-line" />
         <div className="schedule-section-title"><div><h2>2. Chọn video đăng</h2><p>Thứ tự đăng theo thứ tự bạn chọn trong danh sách.</p></div><span className="selected-count">{selected.length} đã chọn</span></div>
         <div className="schedule-video-list">{videos.map(video => <label className="schedule-video" key={video.id}><input type="checkbox" checked={selected.includes(video.id)} onChange={e => setSelected(current => e.target.checked ? [...current, video.id] : current.filter(id => id !== video.id))} /><span className="video-thumb"><span>▶</span><small>VIDEO</small></span><span className="schedule-video-meta"><strong>{video.name}</strong><small>{formatBytes(video.size_bytes)} · {video.status === "ready" ? "Sẵn sàng" : video.status}</small></span></label>)}{!videos.length && <p className="muted-note">Chưa có video. Hãy tải video trong Thư viện video trước.</p>}</div>
