@@ -3,7 +3,7 @@ import secrets
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -116,7 +116,7 @@ def _get_db():
 
 
 @router.get("/pages")
-def get_facebook_pages(facebook_user_id: str, db: Session = __import__("fastapi").Depends(_get_db)):
+def get_facebook_pages(facebook_user_id: str, db: Session = Depends(_get_db)):
     user_token = redis_client.get(f"facebook:user_token:{facebook_user_id}")
     if not user_token:
         raise HTTPException(401, "Phiên Facebook đã hết hạn. Hãy kết nối lại.")
