@@ -78,8 +78,8 @@ function PagesPanel() {
     return () => window.removeEventListener("message", onMessage);
   }, [loadPages]);
 
-  useEffect(() => { setAccount(readFacebookAccount()); }, []);
-  useEffect(() => { if (account?.id) void loadPages(account.id); }, [account?.id, loadPages]);
+  useEffect(() => { queueMicrotask(() => setAccount(readFacebookAccount())); }, []);
+  useEffect(() => { if (account?.id) queueMicrotask(() => void loadPages(account.id)); }, [account?.id, loadPages]);
 
   function connect() {
     popup.current = window.open(API_URL + "/api/auth/facebook/login", "facebook-oauth", "popup,width=640,height=760");
@@ -157,13 +157,14 @@ function SchedulePanel() {
     } catch (err) { setError(getErrorMessage(err)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
+  useEffect(() => { queueMicrotask(() => {
     const savedAccount = readFacebookAccount();
     if (savedAccount) setFacebookUserId(savedAccount.id);
     void loadData();
     const local = new Date(Date.now() + 5 * 60 * 1000);
     const localValue = new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setStartAt(localValue);
+    });
   }, [loadData]);
 
   async function loadPages() {
@@ -224,7 +225,7 @@ function SchedulePanel() {
 
   const statusLabels: Record<string, string> = { pending: "Đang chờ", publishing: "Đang đăng", published: "Đã đăng", failed: "Thất bại", cancelled: "Đã hủy" };
   return <section className="schedule-page">
-    <div className="page-heading"><div><div className="eyebrow">PUBLISHING AUTOMATION</div><h1>Lịch đăng Reels</h1><p>Chọn nhiều video, thiết lập thời gian bắt đầu và khoảng cách đăng tự động.</p></div><button className="button button-secondary" onClick={() => void loadData()}>↻ Làm mới</button></div>
+    <div className="page-heading"><div><div className="eyebrow">PUBLISHING AUTOMATION</div><h1>Lịch đăng Reels</h1><p>Chọn nhiều video, thiết lập thời gian bắt đầu và khoảng cách đăng tự động.</p></div><button className="button button-secondary" onClick={() => void loadData()} disabled={loading}>{loading ? "Đang tải..." : "↻ Làm mới"}</button></div>
     {error && <div className="alert alert-error"><strong>Lỗi</strong><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
     {message && <div className="alert alert-success"><strong>Thông báo</strong><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}
     <div className="schedule-grid">
@@ -271,7 +272,7 @@ function HistoryPanel() {
     }
   }, [filter]);
 
-  useEffect(() => { void loadHistory(); }, [loadHistory]);
+  useEffect(() => { queueMicrotask(() => void loadHistory()); }, [loadHistory]);
 
   const counts = {
     published: jobs.filter(job => job.status === "published").length,
@@ -351,7 +352,7 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => { void loadVideos(); }, [loadVideos]);
+  useEffect(() => { queueMicrotask(() => void loadVideos()); }, [loadVideos]);
 
   const filteredVideos = useMemo(() => {
     const value = query.trim().toLocaleLowerCase("vi");
@@ -423,10 +424,10 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="/" aria-label="Reels Studio trang chủ">
+        <div className="brand" aria-label="Reels Studio">
           <span className="brand-mark">R</span>
           <span>reels<span className="brand-light">studio</span><small>CREATOR WORKSPACE</small></span>
-        </a>
+        </div>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="side-nav" aria-label="Điều hướng chính">
           <button className={activeNav === "overview" ? "nav-item active" : "nav-item"} onClick={() => setActiveNav("overview")}><span>◫</span>Tổng quan</button>
