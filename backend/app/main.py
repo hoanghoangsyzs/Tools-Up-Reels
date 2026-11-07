@@ -12,6 +12,7 @@ from app.core.redis import check_redis
 from app.models.video import Video  # noqa: F401
 from app.models.publish_job import PublishJob  # noqa: F401
 from app.models.posting_setting import PostingSetting  # noqa: F401
+from app.models.facebook_page import FacebookPage  # noqa: F401
 
 
 @asynccontextmanager
