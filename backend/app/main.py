@@ -5,10 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.auth import router as facebook_auth_router
 from app.api.routes.videos import router as videos_router
+from app.api.routes.publishing import router as publishing_router
 from app.core.config import settings
 from app.core.database import Base, engine, check_database
 from app.core.redis import check_redis
 from app.models.video import Video  # noqa: F401
+from app.models.publish_job import PublishJob  # noqa: F401
+from app.models.posting_setting import PostingSetting  # noqa: F401
 
 
 @asynccontextmanager
@@ -27,6 +30,7 @@ app.add_middleware(
 )
 app.include_router(facebook_auth_router)
 app.include_router(videos_router)
+app.include_router(publishing_router)
 
 
 @app.get("/")

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     meta_redirect_uri: str = ""
     meta_config_id: str = ""
     secret_key: str
+    video_storage_dir: str = "storage/videos"
 
     model_config = SettingsConfigDict(
         env_file=".env",

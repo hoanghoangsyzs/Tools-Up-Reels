@@ -29,6 +29,110 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Đã xảy ra lỗi không xác định.";
 }
 
+
+type FacebookPage = { id: string; name: string; category?: string };
+type PublishJob = { id: number; video_id: number; page_name: string; page_id: string; scheduled_at: string; status: string; error_message?: string | null };
+
+function SchedulePanel() {
+  const [videos, setVideos] = useState<VideoItem[]>([]);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [facebookUserId, setFacebookUserId] = useState("");
+  const [pages, setPages] = useState<FacebookPage[]>([]);
+  const [pageId, setPageId] = useState("");
+  const [jobs, setJobs] = useState<PublishJob[]>([]);
+  const [interval, setInterval] = useState(30);
+  const [startAt, setStartAt] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [videoResponse, settingResponse, jobResponse] = await Promise.all([
+        fetch(`${API_URL}/api/videos`, { cache: "no-store" }),
+        fetch(`${API_URL}/api/publishing/settings`, { cache: "no-store" }),
+        fetch(`${API_URL}/api/publishing/jobs`, { cache: "no-store" }),
+      ]);
+      if (!videoResponse.ok || !settingResponse.ok || !jobResponse.ok) throw new Error("Không thể tải dữ liệu lập lịch.");
+      const [videoData, settingData, jobData] = await Promise.all([videoResponse.json(), settingResponse.json(), jobResponse.json()]);
+      setVideos(videoData.videos || []); setInterval(settingData.interval_minutes || 30); setJobs(jobData.jobs || []);
+    } catch (err) { setError(getErrorMessage(err)); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    void loadData();
+    const local = new Date(Date.now() + 5 * 60 * 1000);
+    const localValue = new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setStartAt(localValue);
+  }, [loadData]);
+
+  async function loadPages() {
+    setError(""); setMessage("");
+    if (!facebookUserId.trim()) { setError("Nhập Facebook User ID nhận được sau khi kết nối Facebook."); return; }
+    try {
+      const response = await fetch(`${API_URL}/api/auth/facebook/pages?facebook_user_id=${encodeURIComponent(facebookUserId.trim())}`);
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể tải Fanpage.");
+      setPages(body.pages || []); setPageId(body.pages?.[0]?.id || "");
+      if (!body.pages?.length) setMessage("Tài khoản Facebook chưa có Fanpage được cấp quyền phù hợp.");
+    } catch (err) { setError(getErrorMessage(err)); }
+  }
+
+  async function saveInterval() {
+    setError(""); setMessage("");
+    try {
+      const response = await fetch(`${API_URL}/api/publishing/settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interval_minutes: interval }) });
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể lưu khoảng cách đăng.");
+      setMessage(`Đã lưu khoảng cách mặc định: ${body.interval_minutes} phút.`);
+    } catch (err) { setError(getErrorMessage(err)); }
+  }
+
+  async function createSchedule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError(""); setMessage("");
+    const page = pages.find(item => item.id === pageId);
+    if (!facebookUserId.trim() || !page) { setError("Hãy kết nối Facebook và chọn Fanpage trước."); return; }
+    if (!selected.length) { setError("Hãy chọn ít nhất một video."); return; }
+    try {
+      const response = await fetch(`${API_URL}/api/publishing/schedule`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facebook_user_id: facebookUserId.trim(), page_id: page.id, page_name: page.name, video_ids: selected, start_at: new Date(startAt).toISOString(), interval_minutes: interval }) });
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể tạo lịch đăng.");
+      setMessage(body.message); setSelected([]); await loadData();
+    } catch (err) { setError(getErrorMessage(err)); }
+  }
+
+  async function cancelJob(id: number) {
+    try {
+      const response = await fetch(`${API_URL}/api/publishing/jobs/${id}`, { method: "DELETE" });
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể hủy lịch.");
+      setMessage(body.message); await loadData();
+    } catch (err) { setError(getErrorMessage(err)); }
+  }
+
+  const statusLabels: Record<string, string> = { pending: "Đang chờ", publishing: "Đang đăng", published: "Đã đăng", failed: "Thất bại", cancelled: "Đã hủy" };
+  return <section className="schedule-page">
+    <div className="page-heading"><div><div className="eyebrow">PUBLISHING AUTOMATION</div><h1>Lịch đăng Reels</h1><p>Chọn nhiều video, thiết lập thời gian bắt đầu và khoảng cách đăng tự động.</p></div><button className="button button-secondary" onClick={() => void loadData()}>↻ Làm mới</button></div>
+    {error && <div className="alert alert-error"><strong>Lỗi</strong><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
+    {message && <div className="alert alert-success"><strong>Thông báo</strong><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}
+    <div className="schedule-grid">
+      <form className="library-panel schedule-form" onSubmit={createSchedule}>
+        <div className="schedule-section-title"><div><h2>1. Kết nối Fanpage</h2><p>Token Fanpage được lưu tạm trong Redis, không hiển thị ra giao diện.</p></div></div>
+        <div className="field-row"><label className="field-label" htmlFor="facebook-user">Facebook User ID</label><div className="inline-field"><input id="facebook-user" value={facebookUserId} onChange={e => setFacebookUserId(e.target.value)} placeholder="ID trả về sau OAuth" /><button type="button" className="button button-secondary" onClick={() => window.open(`${API_URL}/api/auth/facebook/login`, "_blank", "noopener,noreferrer")}>Kết nối Facebook</button></div><button type="button" className="text-action" onClick={() => void loadPages()}>Tải danh sách Fanpage</button></div>
+        <div className="field-row"><label className="field-label" htmlFor="page-select">Fanpage nhận video</label><select id="page-select" value={pageId} onChange={e => setPageId(e.target.value)}><option value="">-- Chọn Fanpage --</option>{pages.map(page => <option key={page.id} value={page.id}>{page.name}</option>)}</select></div>
+        <div className="divider-line" />
+        <div className="schedule-section-title"><div><h2>2. Chọn video đăng</h2><p>Thứ tự đăng theo thứ tự bạn chọn trong danh sách.</p></div><span className="selected-count">{selected.length} đã chọn</span></div>
+        <div className="schedule-video-list">{videos.map(video => <label className="schedule-video" key={video.id}><input type="checkbox" checked={selected.includes(video.id)} onChange={e => setSelected(current => e.target.checked ? [...current, video.id] : current.filter(id => id !== video.id))} /><span className="video-thumb"><span>▶</span><small>VIDEO</small></span><span className="schedule-video-meta"><strong>{video.name}</strong><small>{formatBytes(video.size_bytes)} · {video.status === "ready" ? "Sẵn sàng" : video.status}</small></span></label>)}{!videos.length && <p className="muted-note">Chưa có video. Hãy tải video trong Thư viện video trước.</p>}</div>
+        <div className="divider-line" />
+        <div className="schedule-section-title"><div><h2>3. Cấu hình thời gian</h2><p>Khoảng cách được áp dụng giữa từng video trong đợt đăng này.</p></div></div>
+        <div className="two-fields"><div className="field-row"><label className="field-label" htmlFor="start-at">Bắt đầu đăng lúc</label><input id="start-at" type="datetime-local" value={startAt} onChange={e => setStartAt(e.target.value)} required /></div><div className="field-row"><label className="field-label" htmlFor="interval">Khoảng cách (phút)</label><input id="interval" type="number" min="1" max="10080" value={interval} onChange={e => setInterval(Number(e.target.value))} required /></div></div>
+        <button type="button" className="text-action save-interval" onClick={() => void saveInterval()}>Lưu làm khoảng cách mặc định</button>
+        <div className="schedule-preview"><strong>Xem trước lịch</strong><span>{selected.length ? `${selected.length} video · ${interval} phút/video · dự kiến kết thúc sau ${Math.max(0, selected.length - 1) * interval} phút` : "Chọn video để xem trước lịch đăng."}</span></div>
+        <button type="submit" className="button button-primary schedule-submit" disabled={!selected.length || !startAt}>＋ Tạo lịch đăng Reels</button>
+      </form>
+      <aside className="library-panel schedule-help"><div className="schedule-section-title"><div><h2>Khoảng cách đăng</h2><p>Thiết lập nhanh cho các đợt đăng tiếp theo.</p></div></div><div className="interval-presets">{[15,30,60,120,360].map(value => <button key={value} type="button" className={interval === value ? "interval-chip chosen" : "interval-chip"} onClick={() => setInterval(value)}>{value < 60 ? `${value} phút` : `${value / 60} giờ`}</button>)}</div><div className="schedule-note"><strong>Lưu ý vận hành</strong><p>Worker kiểm tra lịch đến hạn mỗi 30 giây. Máy chủ cần chạy Redis, Celery Worker và Celery Beat. Nếu token Fanpage hết hạn, lịch chuyển sang trạng thái thất bại và hiển thị lý do.</p></div></aside>
+    </div>
+    <section className="library-panel jobs-panel"><div className="panel-heading"><div><h2>Lịch đã tạo <span>{jobs.length}</span></h2><p>Theo dõi trạng thái đăng Reels</p></div></div><div className="jobs-list">{jobs.length ? jobs.map(job => <article className="job-row" key={job.id}><div><strong>Video #{job.video_id}</strong><small>{job.page_name || job.page_id} · {formatDate(job.scheduled_at)}</small>{job.error_message && <small className="job-error">{job.error_message}</small>}</div><span className={`job-status status-${job.status}`}>{statusLabels[job.status] || job.status}</span>{job.status === "pending" && <button className="text-action" onClick={() => void cancelJob(job.id)}>Hủy lịch</button>}</article>) : <div className="empty-state"><strong>Chưa có lịch đăng</strong><p>Lịch bạn tạo sẽ xuất hiện ở đây.</p></div>}</div></section>
+  </section>;
+}
+
 export default function Home() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,7 +263,7 @@ export default function Home() {
         </header>
 
         <div className="content">
-          {activeNav === "library" ? <>
+          {activeNav === "schedule" ? <SchedulePanel /> : activeNav === "library" ? <>
             <div className="page-heading">
               <div><div className="eyebrow">CONTENT MANAGEMENT</div><h1>Thư viện video</h1><p>Quản lý, chuẩn bị và tổ chức video trước khi đăng Reels.</p></div>
               <div className="heading-actions"><button className="button button-secondary" onClick={() => void loadVideos()}>↻ <span>Làm mới</span></button><button className="button button-primary" onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <><span className="spinner" /> Đang tải...</> : <><span>＋</span> Tải video lên</>}</button><input ref={fileInput} type="file" accept="video/mp4,video/quicktime,.m4v" multiple hidden onChange={uploadFiles} /></div>

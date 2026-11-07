@@ -25,6 +25,43 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  reels_worker:
+    build:
+      context: ./backend
+    container_name: reels_worker
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      VIDEO_STORAGE_DIR: /app/storage/videos
+    volumes:
+      - ./backend/storage:/app/storage
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  reels_scheduler:
+    build:
+      context: ./backend
+    container_name: reels_scheduler
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:
