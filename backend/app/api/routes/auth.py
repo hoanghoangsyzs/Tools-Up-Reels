@@ -141,11 +141,20 @@ def get_facebook_pages(facebook_user_id: str, db: Session = Depends(_get_db)):
             )
             response.raise_for_status()
             pages = response.json().get("data", [])
+        returned_page_ids = {str(page["id"]) for page in pages}
+        existing_pages = db.query(FacebookPage).filter_by(facebook_user_id=facebook_user_id).all()
+        for existing in existing_pages:
+            if existing.page_id not in returned_page_ids:
+                existing.connected = False
+                redis_client.delete(f"facebook:page_token:{facebook_user_id}:{existing.page_id}")
+
         for page in pages:
             page_id = str(page["id"])
             page_token = page.get("access_token")
             if page_token:
                 redis_client.setex(f"facebook:page_token:{facebook_user_id}:{page_id}", PAGE_TOKEN_TTL, page_token)
+            else:
+                redis_client.delete(f"facebook:page_token:{facebook_user_id}:{page_id}")
             record = db.query(FacebookPage).filter_by(facebook_user_id=facebook_user_id, page_id=page_id).first()
             if record is None:
                 record = FacebookPage(facebook_user_id=facebook_user_id, page_id=page_id)
