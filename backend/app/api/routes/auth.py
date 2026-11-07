@@ -83,6 +83,19 @@ def facebook_callback(
             token_response.raise_for_status()
             token_data = token_response.json()
             access_token = token_data["access_token"]
+            # Exchange the short-lived OAuth token for a long-lived user token.
+            long_lived_response = client.get(
+                graph_url("oauth/access_token"),
+                params={
+                    "grant_type": "fb_exchange_token",
+                    "client_id": settings.meta_app_id,
+                    "client_secret": settings.meta_app_secret,
+                    "fb_exchange_token": access_token,
+                },
+            )
+            if long_lived_response.is_success:
+                token_data = long_lived_response.json()
+                access_token = token_data.get("access_token", access_token)
             profile_response = client.get(
                 graph_url("me"),
                 params={"fields": "id,name", "access_token": access_token},
