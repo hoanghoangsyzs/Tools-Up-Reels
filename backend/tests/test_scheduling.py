@@ -8,7 +8,8 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
 os.environ.setdefault("SECRET_KEY", "test-only-secret")
 
-from app.services.publishing_service import build_schedule_times  # noqa: E402
+from app.services.publishing_service import build_schedule_times, safe_publish_error  # noqa: E402
+import httpx  # noqa: E402
 
 
 def test_build_schedule_times_applies_interval_in_utc():
@@ -33,3 +34,21 @@ def test_build_schedule_times_rejects_invalid_interval(interval):
 def test_build_schedule_times_rejects_empty_video_batch():
     with pytest.raises(ValueError, match="ít nhất"):
         build_schedule_times(datetime.now(timezone.utc), 0, 30)
+
+
+def test_safe_publish_error_does_not_expose_request_url_or_token():
+    request = httpx.Request(
+        "POST",
+        "https://graph.facebook.com/v99.0/page/video_reels?access_token=super-secret",
+    )
+    response = httpx.Response(400, request=request)
+    error = httpx.HTTPStatusError("provider failure", request=request, response=response)
+    message = safe_publish_error(error)
+    assert "400" in message
+    assert "super-secret" not in message
+    assert "graph.facebook.com" not in message
+
+
+def test_safe_publish_error_hides_unexpected_exception_details():
+    message = safe_publish_error(RuntimeError("token=super-secret"))
+    assert "super-secret" not in message
