@@ -190,14 +190,24 @@ function SchedulePanel() {
     if (!selected.length) { setError("Hãy chọn ít nhất một video."); return; }
     try {
       let created = 0;
+      const failures: string[] = [];
       for (const page of selectedPages) {
-        const response = await fetch(`${API_URL}/api/publishing/schedule`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facebook_user_id: facebookUserId.trim(), page_id: page.id, page_name: page.name, video_ids: selected, start_at: new Date(startAt).toISOString(), interval_minutes: interval }) });
-        const body = await response.json();
-        if (!response.ok) throw new Error("Fanpage " + page.name + ": " + (body.detail || "Không thể tạo lịch đăng."));
-        created += body.jobs?.length || selected.length;
+        try {
+          const response = await fetch(`${API_URL}/api/publishing/schedule`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facebook_user_id: facebookUserId.trim(), page_id: page.id, page_name: page.name, video_ids: selected, start_at: new Date(startAt).toISOString(), interval_minutes: interval }) });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.detail || "Không thể tạo lịch đăng.");
+          created += body.jobs?.length || selected.length;
+        } catch (err) {
+          failures.push(page.name + ": " + getErrorMessage(err));
+        }
       }
-      setMessage("Đã tạo " + created + " lịch đăng trên " + selectedPages.length + " Fanpage.");
-      setSelected([]); await loadData();
+      if (created) {
+        setMessage("Đã tạo " + created + " lịch đăng trên " + (selectedPages.length - failures.length) + "/" + selectedPages.length + " Fanpage.");
+        setSelected([]);
+        await loadData();
+      }
+      if (failures.length) setError("Một số Fanpage chưa tạo được lịch: " + failures.join(" · "));
+      if (!created && !failures.length) setError("Không tạo được lịch đăng.");
     } catch (err) { setError(getErrorMessage(err)); }
   }
 
