@@ -1,13 +1,14 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.auth import router as facebook_auth_router
 from app.api.routes.videos import router as videos_router
 from app.core.config import settings
 from app.core.database import Base, engine, check_database
 from app.core.redis import check_redis
-from app.models.video import Video  # noqa: F401 - registers model metadata
+from app.models.video import Video  # noqa: F401
 
 
 @asynccontextmanager
@@ -16,7 +17,14 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="1.1.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="1.2.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(facebook_auth_router)
 app.include_router(videos_router)
 
