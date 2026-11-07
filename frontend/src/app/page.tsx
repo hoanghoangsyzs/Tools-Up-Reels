@@ -39,6 +39,96 @@ function readFacebookAccount(): FacebookAccount | null {
 }
 type PublishJob = { id: number; video_id: number; page_name: string; page_id: string; scheduled_at: string; status: string; error_message?: string | null };
 
+
+function PagesPanel() {
+  const [account, setAccount] = useState<FacebookAccount | null>(() => readFacebookAccount());
+  const [pages, setPages] = useState<FacebookPage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const popup = useRef<Window | null>(null);
+
+  const loadPages = useCallback(async (userId = account?.id) => {
+    if (!userId) return;
+    setLoading(true); setError("");
+    try {
+      const response = await fetch(API_URL + "/api/auth/facebook/pages?facebook_user_id=" + encodeURIComponent(userId), { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "Không thể tải danh sách Fanpage.");
+      setPages(body.pages || []);
+    } catch (err) { setError(getErrorMessage(err)); }
+    finally { setLoading(false); }
+  }, [account?.id]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== new URL(API_URL).origin || event.source !== popup.current) return;
+      if (event.data?.type !== "reels-studio:facebook-oauth") return;
+      if (!event.data.success || !event.data.facebook_user?.id) {
+        setError(event.data.error || "Không thể kết nối Facebook.");
+        return;
+      }
+      const next = { id: String(event.data.facebook_user.id), name: String(event.data.facebook_user.name || "Facebook") };
+      localStorage.setItem(FACEBOOK_ACCOUNT_KEY, JSON.stringify(next));
+      setAccount(next);
+      setNotice("Đã kết nối tài khoản " + next.name + ". Đang đồng bộ Fanpage...");
+      void loadPages(next.id);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [loadPages]);
+
+  useEffect(() => { if (account?.id) void loadPages(account.id); }, [account?.id, loadPages]);
+
+  function connect() {
+    popup.current = window.open(API_URL + "/api/auth/facebook/login", "facebook-oauth", "popup,width=640,height=760");
+    if (!popup.current) setError("Trình duyệt đã chặn popup. Hãy cho phép popup rồi thử lại.");
+  }
+
+  async function setDefault(page: FacebookPage) {
+    if (!account) return;
+    try {
+      const response = await fetch(API_URL + "/api/auth/facebook/pages/" + encodeURIComponent(page.id) + "/default?facebook_user_id=" + encodeURIComponent(account.id), { method: "POST" });
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể đặt Fanpage mặc định.");
+      setNotice(body.message); await loadPages();
+    } catch (err) { setError(getErrorMessage(err)); }
+  }
+
+  async function disconnectPage(page: FacebookPage) {
+    if (!account || !window.confirm('Ngắt kết nối Fanpage "' + page.name + '"?')) return;
+    try {
+      const response = await fetch(API_URL + "/api/auth/facebook/pages/" + encodeURIComponent(page.id) + "?facebook_user_id=" + encodeURIComponent(account.id), { method: "DELETE" });
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể ngắt kết nối Fanpage.");
+      setNotice(body.message); await loadPages();
+    } catch (err) { setError(getErrorMessage(err)); }
+  }
+
+  async function disconnectAccount() {
+    if (!account || !window.confirm("Ngắt kết nối tài khoản Facebook và xóa các phiên token đang lưu?")) return;
+    try {
+      const response = await fetch(API_URL + "/api/auth/facebook/connection?facebook_user_id=" + encodeURIComponent(account.id), { method: "DELETE" });
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể ngắt kết nối.");
+      localStorage.removeItem(FACEBOOK_ACCOUNT_KEY); setAccount(null); setPages([]); setNotice(body.message);
+    } catch (err) { setError(getErrorMessage(err)); }
+  }
+
+  return <section className="pages-page">
+    <div className="page-heading"><div><div className="eyebrow">ACCOUNT CONNECTIONS</div><h1>Quản lý Fanpage</h1><p>Kết nối Facebook, đồng bộ trang bạn quản lý và chọn trang mặc định để đăng Reels.</p></div><button className="button button-primary" onClick={connect}>＋ Kết nối Facebook</button></div>
+    {error && <div className="alert alert-error"><strong>Lỗi</strong><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
+    {notice && <div className="alert alert-success"><strong>Thông báo</strong><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
+    <section className="library-panel account-panel">
+      <div className="account-heading"><div><span className={account ? "account-dot online" : "account-dot"}></span><div><strong>{account?.name || "Chưa kết nối tài khoản"}</strong><small>{account ? "Facebook User ID: " + account.id : "Kết nối Facebook để bắt đầu quản lý Fanpage."}</small></div></div><div className="account-actions"><button className="button button-secondary" onClick={() => void loadPages()} disabled={!account || loading}>↻ Đồng bộ</button>{account && <button className="button button-secondary" onClick={() => void disconnectAccount()}>Ngắt tài khoản</button>}</div></div>
+      <div className="pages-list">
+        {loading ? <div className="empty-state"><span className="spinner dark" /><strong>Đang đồng bộ Fanpage...</strong></div> :
+          pages.length ? pages.map(page => <article className="page-card" key={page.id}>
+            <div className="page-avatar">f</div><div className="page-info"><strong>{page.name}</strong><small>{page.category || "Fanpage"} · ID: {page.id}</small><div className="page-tags"><span>{page.connected ? "Đã cấp quyền" : "Thiếu Page Token"}</span>{page.is_default && <span className="default-tag">Mặc định</span>}</div></div>
+            <div className="page-actions">{!page.is_default && <button className="text-action" onClick={() => void setDefault(page)}>Đặt mặc định</button>}<button className="text-action danger-text" onClick={() => void disconnectPage(page)}>Ngắt kết nối</button></div>
+          </article>) : <div className="empty-state"><div className="empty-icon">▣</div><strong>{account ? "Chưa có Fanpage nào" : "Chưa kết nối Facebook"}</strong><p>{account ? "Đồng bộ lại hoặc kiểm tra quyền pages_show_list trong Meta App." : "Nhấn Kết nối Facebook để cấp quyền truy cập Fanpage."}</p><button className="button button-primary" onClick={account ? () => void loadPages() : connect}>{account ? "Đồng bộ Fanpage" : "Kết nối Facebook"}</button></div>}
+      </div>
+    </section>
+  </section>;
+}
+
 function SchedulePanel() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
@@ -339,7 +429,7 @@ export default function Home() {
         </header>
 
         <div className="content">
-          {activeNav === "schedule" ? <SchedulePanel /> : activeNav === "history" ? <HistoryPanel /> : activeNav === "library" ? <>
+          {activeNav === "schedule" ? <SchedulePanel /> : activeNav === "history" ? <HistoryPanel /> : activeNav === "pages" ? <PagesPanel /> : activeNav === "library" ? <>
             <div className="page-heading">
               <div><div className="eyebrow">CONTENT MANAGEMENT</div><h1>Thư viện video</h1><p>Quản lý, chuẩn bị và tổ chức video trước khi đăng Reels.</p></div>
               <div className="heading-actions"><button className="button button-secondary" onClick={() => void loadVideos()}>↻ <span>Làm mới</span></button><button className="button button-primary" onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <><span className="spinner" /> Đang tải...</> : <><span>＋</span> Tải video lên</>}</button><input ref={fileInput} type="file" accept="video/mp4,video/quicktime,.m4v" multiple hidden onChange={uploadFiles} /></div>
