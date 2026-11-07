@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.video import Video
+from app.models.publish_job import PublishJob
 
 router = APIRouter(prefix="/api/videos", tags=["Videos"])
 VIDEO_DIR = Path(os.getenv("VIDEO_STORAGE_DIR", "storage/videos"))
@@ -147,6 +148,12 @@ def delete_video(video_id: int, db: Session = Depends(get_db)):
     video = db.get(Video, video_id)
     if not video:
         raise HTTPException(404, "Không tìm thấy video.")
+    linked_jobs = db.query(PublishJob.id).filter(PublishJob.video_id == video_id).limit(1).first()
+    if linked_jobs:
+        raise HTTPException(
+            409,
+            "Video đã được gắn với lịch đăng. Hãy hủy hoặc xóa các lịch liên quan trước khi xóa video.",
+        )
     path = VIDEO_DIR / video.stored_name
     db.delete(video)
     db.commit()

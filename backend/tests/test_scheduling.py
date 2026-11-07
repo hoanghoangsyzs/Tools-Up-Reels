@@ -1,0 +1,69 @@
+from datetime import datetime, timedelta, timezone
+import os
+
+import pytest
+
+# Settings are loaded at import time by the application modules.
+os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
+os.environ.setdefault("SECRET_KEY", "test-only-secret")
+
+from app.services.publishing_service import build_schedule_times, safe_publish_error  # noqa: E402
+import httpx  # noqa: E402
+from app.api.routes.auth import oauth_result_html  # noqa: E402
+
+
+def test_build_schedule_times_applies_interval_in_utc():
+    start = datetime(2026, 11, 8, 9, 0, tzinfo=timezone(timedelta(hours=7)))
+    result = build_schedule_times(start, 3, 45)
+    assert result[0] == datetime(2026, 11, 8, 2, 0, tzinfo=timezone.utc)
+    assert result[1] - result[0] == timedelta(minutes=45)
+    assert result[2] - result[1] == timedelta(minutes=45)
+
+
+def test_build_schedule_times_rejects_naive_datetime():
+    with pytest.raises(ValueError, match="múi giờ"):
+        build_schedule_times(datetime(2026, 11, 8, 9, 0), 1, 30)
+
+
+@pytest.mark.parametrize("interval", [0, -1, 10081])
+def test_build_schedule_times_rejects_invalid_interval(interval):
+    with pytest.raises(ValueError, match="Khoảng cách"):
+        build_schedule_times(datetime.now(timezone.utc), 2, interval)
+
+
+def test_build_schedule_times_rejects_empty_video_batch():
+    with pytest.raises(ValueError, match="ít nhất"):
+        build_schedule_times(datetime.now(timezone.utc), 0, 30)
+
+
+def test_safe_publish_error_does_not_expose_request_url_or_token():
+    request = httpx.Request(
+        "POST",
+        "https://graph.facebook.com/v99.0/page/video_reels?access_token=super-secret",
+    )
+    response = httpx.Response(400, request=request)
+    error = httpx.HTTPStatusError("provider failure", request=request, response=response)
+    message = safe_publish_error(error)
+    assert "400" in message
+    assert "super-secret" not in message
+    assert "graph.facebook.com" not in message
+
+
+def test_safe_publish_error_hides_unexpected_exception_details():
+    message = safe_publish_error(RuntimeError("token=super-secret"))
+    assert "super-secret" not in message
+
+
+def test_oauth_popup_result_uses_configured_frontend_origin(monkeypatch):
+    from app.api.routes.auth import settings as auth_settings
+
+    monkeypatch.setattr(auth_settings, "frontend_url", "https://studio.example.test/")
+    response = oauth_result_html(
+        success=True,
+        payload={"facebook_user": {"id": "123", "name": "</script><script>alert(1)</script>"}},
+    )
+    assert response.status_code == 200
+    assert "https://studio.example.test" in response.body.decode()
+    assert "\\u003c/script\\u003e" in response.body.decode()
+    assert "postMessage" in response.body.decode()
