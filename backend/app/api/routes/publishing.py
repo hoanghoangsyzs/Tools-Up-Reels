@@ -41,6 +41,15 @@ class ScheduleRequest(BaseModel):
     start_at: datetime
     interval_minutes: int | None = Field(default=None, ge=MIN_INTERVAL_MINUTES, le=MAX_INTERVAL_MINUTES)
 
+    @field_validator("start_at")
+    @classmethod
+    def start_must_be_future_and_timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Thời điểm bắt đầu phải có múi giờ.")
+        if value <= datetime.now(timezone.utc):
+            raise ValueError("Thời điểm bắt đầu phải nằm trong tương lai.")
+        return value
+
     @field_validator("video_ids")
     @classmethod
     def unique_video_ids(cls, value: list[int]) -> list[int]:
