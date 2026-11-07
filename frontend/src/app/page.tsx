@@ -169,7 +169,7 @@ function SchedulePanel() {
     try {
       const response = await fetch(`${API_URL}/api/auth/facebook/pages?facebook_user_id=${encodeURIComponent(facebookUserId.trim())}`);
       const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể tải Fanpage.");
-      setPages(body.pages || []); const preferred = body.pages?.find((page: FacebookPage) => page.is_default) || body.pages?.[0]; setPageId(preferred?.id || "");
+      setPages(body.pages || []); const preferred = body.pages?.find((page: FacebookPage) => page.is_default) || body.pages?.[0]; setSelectedPageIds(preferred ? [preferred.id] : []);
       if (!body.pages?.length) setMessage("Tài khoản Facebook chưa có Fanpage được cấp quyền phù hợp.");
     } catch (err) { setError(getErrorMessage(err)); }
   }
@@ -198,8 +198,6 @@ function SchedulePanel() {
       }
       setMessage("Đã tạo " + created + " lịch đăng trên " + selectedPages.length + " Fanpage.");
       setSelected([]); await loadData();
-      const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể tạo lịch đăng.");
-      setMessage(body.message); setSelected([]); await loadData();
     } catch (err) { setError(getErrorMessage(err)); }
   }
 
