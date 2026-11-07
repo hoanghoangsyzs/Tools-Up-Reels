@@ -30,13 +30,19 @@ function getErrorMessage(error: unknown) {
 }
 
 
-type FacebookPage = { id: string; name: string; category?: string };
+type FacebookPage = { id: string; name: string; category?: string; connected?: boolean; is_default?: boolean; tasks?: string[] };
+type FacebookAccount = { id: string; name: string };
+const FACEBOOK_ACCOUNT_KEY = "reels-studio:facebook-account";
+function readFacebookAccount(): FacebookAccount | null {
+  if (typeof window === "undefined") return null;
+  try { const value = localStorage.getItem(FACEBOOK_ACCOUNT_KEY); return value ? JSON.parse(value) as FacebookAccount : null; } catch { return null; }
+}
 type PublishJob = { id: number; video_id: number; page_name: string; page_id: string; scheduled_at: string; status: string; error_message?: string | null };
 
 function SchedulePanel() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
-  const [facebookUserId, setFacebookUserId] = useState("");
+  const [facebookUserId, setFacebookUserId] = useState(() => readFacebookAccount()?.id || "");
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [pageId, setPageId] = useState("");
   const [jobs, setJobs] = useState<PublishJob[]>([]);
@@ -73,7 +79,7 @@ function SchedulePanel() {
     try {
       const response = await fetch(`${API_URL}/api/auth/facebook/pages?facebook_user_id=${encodeURIComponent(facebookUserId.trim())}`);
       const body = await response.json(); if (!response.ok) throw new Error(body.detail || "Không thể tải Fanpage.");
-      setPages(body.pages || []); setPageId(body.pages?.[0]?.id || "");
+      setPages(body.pages || []); const preferred = body.pages?.find((page: FacebookPage) => page.is_default) || body.pages?.[0]; setPageId(preferred?.id || "");
       if (!body.pages?.length) setMessage("Tài khoản Facebook chưa có Fanpage được cấp quyền phù hợp.");
     } catch (err) { setError(getErrorMessage(err)); }
   }
@@ -115,8 +121,8 @@ function SchedulePanel() {
     <div className="schedule-grid">
       <form className="library-panel schedule-form" onSubmit={createSchedule}>
         <div className="schedule-section-title"><div><h2>1. Kết nối Fanpage</h2><p>Token Fanpage được lưu tạm trong Redis, không hiển thị ra giao diện.</p></div></div>
-        <div className="field-row"><label className="field-label" htmlFor="facebook-user">Facebook User ID</label><div className="inline-field"><input id="facebook-user" value={facebookUserId} onChange={e => setFacebookUserId(e.target.value)} placeholder="ID trả về sau OAuth" /><button type="button" className="button button-secondary" onClick={() => window.open(`${API_URL}/api/auth/facebook/login`, "_blank", "noopener,noreferrer")}>Kết nối Facebook</button></div><button type="button" className="text-action" onClick={() => void loadPages()}>Tải danh sách Fanpage</button></div>
-        <div className="field-row"><label className="field-label" htmlFor="page-select">Fanpage nhận video</label><select id="page-select" value={pageId} onChange={e => setPageId(e.target.value)}><option value="">-- Chọn Fanpage --</option>{pages.map(page => <option key={page.id} value={page.id}>{page.name}</option>)}</select></div>
+        <div className="field-row"><label className="field-label">Tài khoản Facebook</label><div className="connected-account"><strong>{readFacebookAccount()?.name || (facebookUserId ? "Đã kết nối Facebook" : "Chưa kết nối")}</strong><small>{facebookUserId ? "ID: " + facebookUserId : "Kết nối để tải các Fanpage bạn quản lý."}</small></div><div className="inline-field"><button type="button" className="button button-primary" onClick={() => window.open(API_URL + "/api/auth/facebook/login", "facebook-oauth", "popup,width=640,height=760")}>＋ Kết nối Facebook</button><button type="button" className="button button-secondary" onClick={() => void loadPages()} disabled={!facebookUserId}>↻ Đồng bộ Fanpage</button></div><button type="button" className="text-action" onClick={() => void loadPages()}>Tải lại danh sách Fanpage</button></div>
+        <div className="field-row"><label className="field-label" htmlFor="page-select">Fanpage nhận video</label><select id="page-select" value={pageId} onChange={e => setPageId(e.target.value)}><option value="">-- Chọn Fanpage --</option>{pages.map(page => <option key={page.id} value={page.id}>{page.name}{page.is_default ? " · Mặc định" : ""}</option>)}</select></div>
         <div className="divider-line" />
         <div className="schedule-section-title"><div><h2>2. Chọn video đăng</h2><p>Thứ tự đăng theo thứ tự bạn chọn trong danh sách.</p></div><span className="selected-count">{selected.length} đã chọn</span></div>
         <div className="schedule-video-list">{videos.map(video => <label className="schedule-video" key={video.id}><input type="checkbox" checked={selected.includes(video.id)} onChange={e => setSelected(current => e.target.checked ? [...current, video.id] : current.filter(id => id !== video.id))} /><span className="video-thumb"><span>▶</span><small>VIDEO</small></span><span className="schedule-video-meta"><strong>{video.name}</strong><small>{formatBytes(video.size_bytes)} · {video.status === "ready" ? "Sẵn sàng" : video.status}</small></span></label>)}{!videos.length && <p className="muted-note">Chưa có video. Hãy tải video trong Thư viện video trước.</p>}</div>
@@ -316,7 +322,7 @@ export default function Home() {
         <nav className="side-nav" aria-label="Điều hướng chính">
           <button className={activeNav === "overview" ? "nav-item active" : "nav-item"} onClick={() => setActiveNav("overview")}><span>◫</span>Tổng quan</button>
           <button className={activeNav === "library" ? "nav-item active" : "nav-item"} onClick={() => setActiveNav("library")}><span>▤</span>Thư viện video</button>
-          <button className={activeNav === "pages" ? "nav-item active" : "nav-item"} onClick={() => setActiveNav("pages")}><span>▣</span>Fanpage <em>0</em></button>
+          <button className={activeNav === "pages" ? "nav-item active" : "nav-item"} onClick={() => setActiveNav("pages")}><span>▣</span>Fanpage</button>
           <button className={activeNav === "schedule" ? "nav-item active" : "nav-item"} onClick={() => setActiveNav("schedule")}><span>◷</span>Lịch đăng</button>
           <button className={activeNav === "history" ? "nav-item active" : "nav-item"} onClick={() => setActiveNav("history")}><span>↗</span>Lịch sử đăng</button>
         </nav>
