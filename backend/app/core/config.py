@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     meta_graph_version: str = ""
     meta_redirect_uri: str = ""
     meta_config_id: str = ""
+    frontend_url: str = "http://localhost:3000"
     secret_key: str
     video_storage_dir: str = "storage/videos"
 
