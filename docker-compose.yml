@@ -31,6 +31,41 @@ services:
       timeout: 3s
       retries: 10
 
+  api:
+    build:
+      context: ./backend
+    container_name: reels_api
+    restart: unless-stopped
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://reels_user:dev_password_change_me@postgres:5432/reels_db}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY:-development-only-change-this-secret}
+      VIDEO_STORAGE_DIR: /app/storage/videos
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/storage:/app/storage
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/database', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   reels_worker:
     build:
       context: ./backend
@@ -48,7 +83,7 @@ services:
       - ./backend/storage:/app/storage
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
     depends_on:
-      postgres:
+      api:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -67,7 +102,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-development-only-change-this-secret}
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=INFO
     depends_on:
-      postgres:
+      api:
         condition: service_healthy
       redis:
         condition: service_healthy
