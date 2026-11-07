@@ -27,7 +27,7 @@ def test_build_schedule_times_rejects_naive_datetime():
 
 @pytest.mark.parametrize("interval", [0, -1, 10081])
 def test_build_schedule_times_rejects_invalid_interval(interval):
-    with pytest.raises(ValueError, match="khoảng cách"):
+    with pytest.raises(ValueError, match="Khoảng cách"):
         build_schedule_times(datetime.now(timezone.utc), 2, interval)
 
 
