@@ -1,8 +1,14 @@
 from datetime import datetime, timedelta, timezone
+import os
 
 import pytest
 
-from app.services.publishing_service import build_schedule_times
+# Settings are loaded at import time by the application modules.
+os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
+os.environ.setdefault("SECRET_KEY", "test-only-secret")
+
+from app.services.publishing_service import build_schedule_times  # noqa: E402
 
 
 def test_build_schedule_times_applies_interval_in_utc():
