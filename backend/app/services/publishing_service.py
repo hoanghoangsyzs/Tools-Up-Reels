@@ -14,6 +14,17 @@ MIN_INTERVAL_MINUTES = 1
 MAX_INTERVAL_MINUTES = 10080
 
 
+def safe_publish_error(exc: Exception) -> str:
+    """Return actionable errors without leaking request URLs or access tokens."""
+    if isinstance(exc, ValueError):
+        return str(exc)[:1000]
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"Facebook API trả về HTTP {exc.response.status_code}. Hãy kiểm tra quyền Page và cấu hình Meta App."
+    if isinstance(exc, httpx.RequestError):
+        return "Không thể kết nối Facebook API. Hãy kiểm tra mạng và thử kết nối lại."
+    return "Đăng Reels thất bại do lỗi xử lý nội bộ. Kiểm tra log worker để biết thêm chi tiết."
+
+
 def build_schedule_times(start_at: datetime, count: int, interval_minutes: int) -> list[datetime]:
     if start_at.tzinfo is None or start_at.utcoffset() is None:
         raise ValueError("Thời điểm bắt đầu phải có múi giờ.")
