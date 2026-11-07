@@ -10,6 +10,7 @@ os.environ.setdefault("SECRET_KEY", "test-only-secret")
 
 from app.services.publishing_service import build_schedule_times, safe_publish_error  # noqa: E402
 import httpx  # noqa: E402
+from app.api.routes.auth import oauth_result_html  # noqa: E402
 
 
 def test_build_schedule_times_applies_interval_in_utc():
@@ -52,3 +53,17 @@ def test_safe_publish_error_does_not_expose_request_url_or_token():
 def test_safe_publish_error_hides_unexpected_exception_details():
     message = safe_publish_error(RuntimeError("token=super-secret"))
     assert "super-secret" not in message
+
+
+def test_oauth_popup_result_uses_configured_frontend_origin(monkeypatch):
+    from app.api.routes.auth import settings as auth_settings
+
+    monkeypatch.setattr(auth_settings, "frontend_url", "https://studio.example.test/")
+    response = oauth_result_html(
+        success=True,
+        payload={"facebook_user": {"id": "123", "name": "</script><script>alert(1)</script>"}},
+    )
+    assert response.status_code == 200
+    assert "https://studio.example.test" in response.body.decode()
+    assert "\\u003c/script\\u003e" in response.body.decode()
+    assert "postMessage" in response.body.decode()
