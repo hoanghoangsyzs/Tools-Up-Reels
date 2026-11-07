@@ -133,6 +133,76 @@ function SchedulePanel() {
   </section>;
 }
 
+
+function HistoryPanel() {
+  const [jobs, setJobs] = useState<PublishJob[]>([]);
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadHistory = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const query = filter === "all" ? "" : `?status=${encodeURIComponent(filter)}`;
+      const response = await fetch(`${API_URL}/api/publishing/jobs${query}`, { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "Không thể tải lịch sử đăng.");
+      setJobs(body.jobs || []);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
+  useEffect(() => { void loadHistory(); }, [loadHistory]);
+
+  const counts = {
+    published: jobs.filter(job => job.status === "published").length,
+    failed: jobs.filter(job => job.status === "failed").length,
+    pending: jobs.filter(job => job.status === "pending" || job.status === "publishing").length,
+  };
+  const labels: Record<string, string> = {
+    pending: "Đang chờ", publishing: "Đang đăng", published: "Thành công",
+    failed: "Thất bại", cancelled: "Đã hủy",
+  };
+
+  return <section className="history-page">
+    <div className="page-heading">
+      <div><div className="eyebrow">PUBLISHING REPORT</div><h1>Lịch sử đăng</h1><p>Theo dõi các video đã đăng, đang chờ và những lần đăng gặp lỗi.</p></div>
+      <button className="button button-secondary" onClick={() => void loadHistory()} disabled={loading}>↻ Làm mới</button>
+    </div>
+    {error && <div className="alert alert-error"><strong>Lỗi</strong><span>{error}</span></div>}
+    <div className="history-stats">
+      <article className="history-stat"><span>Đã đăng thành công</span><strong>{counts.published}</strong></article>
+      <article className="history-stat"><span>Đang chờ / xử lý</span><strong>{counts.pending}</strong></article>
+      <article className="history-stat"><span>Đăng thất bại</span><strong>{counts.failed}</strong></article>
+    </div>
+    <section className="library-panel jobs-panel">
+      <div className="panel-heading">
+        <div><h2>Danh sách lần đăng</h2><p>{jobs.length} kết quả {filter !== "all" ? `· bộ lọc: ${labels[filter]}` : ""}</p></div>
+        <select aria-label="Lọc trạng thái lịch đăng" value={filter} onChange={event => setFilter(event.target.value)}>
+          <option value="all">Tất cả trạng thái</option>
+          <option value="pending">Đang chờ</option>
+          <option value="publishing">Đang đăng</option>
+          <option value="published">Đã đăng</option>
+          <option value="failed">Thất bại</option>
+          <option value="cancelled">Đã hủy</option>
+        </select>
+      </div>
+      <div className="jobs-list">
+        {loading ? <div className="empty-state"><p>Đang tải lịch sử...</p></div> :
+          jobs.length ? jobs.map(job => <article className="job-row" key={job.id}>
+            <div><strong>Video #{job.video_id}</strong><small>{job.page_name || job.page_id} · {formatDate(job.scheduled_at)}</small>{job.error_message && <small className="job-error">{job.error_message}</small>}</div>
+            <span className={`job-status status-${job.status}`}>{labels[job.status] || job.status}</span>
+          </article>) :
+          <div className="empty-state"><strong>Chưa có dữ liệu</strong><p>Các lần đăng sẽ xuất hiện tại đây sau khi bạn tạo lịch.</p></div>}
+      </div>
+    </section>
+  </section>;
+}
+
 export default function Home() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -263,7 +333,7 @@ export default function Home() {
         </header>
 
         <div className="content">
-          {activeNav === "schedule" ? <SchedulePanel /> : activeNav === "library" ? <>
+          {activeNav === "schedule" ? <SchedulePanel /> : activeNav === "history" ? <HistoryPanel /> : activeNav === "library" ? <>
             <div className="page-heading">
               <div><div className="eyebrow">CONTENT MANAGEMENT</div><h1>Thư viện video</h1><p>Quản lý, chuẩn bị và tổ chức video trước khi đăng Reels.</p></div>
               <div className="heading-actions"><button className="button button-secondary" onClick={() => void loadVideos()}>↻ <span>Làm mới</span></button><button className="button button-primary" onClick={() => fileInput.current?.click()} disabled={uploading}>{uploading ? <><span className="spinner" /> Đang tải...</> : <><span>＋</span> Tải video lên</>}</button><input ref={fileInput} type="file" accept="video/mp4,video/quicktime,.m4v" multiple hidden onChange={uploadFiles} /></div>
